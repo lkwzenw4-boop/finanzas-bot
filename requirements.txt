@@ -1,0 +1,7 @@
+onnxruntime
+tokenizers
+numpy
+customtkinter
+packaging
+pillow
+matplotlib
