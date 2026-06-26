@@ -37,6 +37,26 @@ logger = logging.getLogger(__name__)
 
 
 def main():
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    
+    class DummyHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"Bot is alive")
+            
+    port = int(os.environ.get("PORT", 10000))
+    def run_dummy_server():
+        try:
+            server = HTTPServer(("0.0.0.0", port), DummyHandler)
+            server.serve_forever()
+        except Exception as e:
+            logger.error(f"Error starting dummy server: {e}")
+            
+    threading.Thread(target=run_dummy_server, daemon=True).start()
+    logger.info(f"Dummy HTTP server started on port {port}")
+
     token = os.environ.get('TELEGRAM_BOT_TOKEN')
     if not token:
         logger.error("❌ TELEGRAM_BOT_TOKEN no está configurado. Revisa tus variables de entorno.")
