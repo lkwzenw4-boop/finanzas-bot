@@ -63,12 +63,7 @@ def main():
         logger.error("❌ TELEGRAM_BOT_TOKEN no está configurado. Revisa tus variables de entorno.")
         sys.exit(1)
 
-    # Configurar SSL con certifi (necesario en Windows / Python 3.14)
-    import ssl
-    import certifi
-    import httpx
-    ssl_ctx = ssl.create_default_context(cafile=certifi.where())
-    http_client = httpx.AsyncClient(verify=ssl_ctx)
+
 
     database_url = os.environ.get('DATABASE_URL')
     if not database_url:
