@@ -70,7 +70,7 @@ class HistoryView(ctk.CTkFrame):
             return
 
         for row, (id_txn, desc, amount, type_txn, cat_name, fecha) in enumerate(transacciones, 1):
-            fecha_str = fecha[:10] if fecha else "---"
+            fecha_str = str(fecha)[:10] if fecha else "---"
             tipo_color = "green" if type_txn == "ingreso" else "#FF5252"
             
             ctk.CTkLabel(table_frame, text=fecha_str).grid(row=row, column=0, sticky="w", padx=10, pady=5)
