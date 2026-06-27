@@ -17,7 +17,7 @@ from telegram.ext import (
 )
 
 from telegram_bot.handlers.auth import (
-    start, receive_username, receive_password, cancel_login,
+    start, receive_username, receive_password, cancel_login, logout,
     WAITING_USERNAME, WAITING_PASSWORD
 )
 from telegram_bot.handlers.transactions import (
@@ -96,6 +96,7 @@ def main():
     )
 
     # ── Registrar handlers ──────────────────────────
+    app.add_handler(CommandHandler('logout', logout))
     app.add_handler(login_handler)
 
     # Comandos de reportes

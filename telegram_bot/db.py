@@ -86,7 +86,21 @@ def link_telegram_id(username: str, password: str, telegram_id: int):
     finally:
         conn.close()
 
-
+def unlink_telegram_id(telegram_id: int):
+    """Desvincula la cuenta de Telegram de cualquier perfil."""
+    conn = get_connection()
+    if not conn:
+        return False
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            _ph("UPDATE tbl_users SET telegram_id = NULL WHERE telegram_id = ?"),
+            (str(telegram_id),)
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
 
 # ─────────────────────────────────────────────
 # Transacciones

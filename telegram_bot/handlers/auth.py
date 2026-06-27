@@ -5,7 +5,7 @@ Login en 2 pasos: primero usuario, luego contraseña (se borra el mensaje por pr
 """
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
-from telegram_bot.db import get_user_by_telegram_id, link_telegram_id
+from telegram_bot.db import get_user_by_telegram_id, link_telegram_id, unlink_telegram_id
 
 # Estados del ConversationHandler
 WAITING_USERNAME = 1
