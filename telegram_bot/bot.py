@@ -62,6 +62,22 @@ def main():
     threading.Thread(target=run_dummy_server, daemon=True).start()
     logger.info(f"Dummy HTTP server started on port {port}")
 
+    # --- Mecanismo de Auto-Ping para evitar que Render duerma la app ---
+    def self_ping():
+        import time
+        import urllib.request
+        url = "https://finanzas-bot-4wx8.onrender.com"
+        while True:
+            time.sleep(10 * 60) # Esperar 10 minutos
+            try:
+                urllib.request.urlopen(url)
+                logger.info("[Auto-Ping] Ping exitoso para mantener el bot despierto.")
+            except Exception as e:
+                logger.error(f"[Auto-Ping] Error al hacer ping: {e}")
+                
+    threading.Thread(target=self_ping, daemon=True).start()
+    # -------------------------------------------------------------------
+
     token = os.environ.get('TELEGRAM_BOT_TOKEN')
     if not token:
         logger.error("❌ TELEGRAM_BOT_TOKEN no está configurado. Revisa tus variables de entorno.")

@@ -185,6 +185,17 @@ def update_transaction(id_txn, amount, description, id_category):
     finally:
         conn.close()
 
+def delete_transaction(id_txn):
+    conn = get_connection()
+    if not conn: return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute(adapt_query("DELETE FROM tbl_transactions WHERE id_txn = ?"), (id_txn,))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
 def get_category_from_history(id_user, desc):
     conn = get_connection()
     if not conn: return None
@@ -266,12 +277,50 @@ def get_recurring(id_user):
     try:
         cursor = conn.cursor()
         cursor.execute(adapt_query("""
-            SELECT r.id, r.description, r.amount, r.type_txn, c.description as cat_name, r.day_of_month
+            SELECT r.id, r.description, r.amount, r.type_txn, c.description as cat_name, r.day_of_month, r.last_processed_month
             FROM tbl_recurring r
             LEFT JOIN tbl_category c ON r.id_category = c.id_category
             WHERE r.id_user = ?
         """), (id_user,))
         return [tuple(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+
+def skip_recurring_month(rec_id, month_str):
+    import datetime
+    conn = get_connection()
+    if not conn: return
+    try:
+        cursor = conn.cursor()
+        
+        # Obtener detalles del gasto recurrente para buscar su transacción automática
+        cursor.execute(adapt_query("SELECT id_user, description, id_category FROM tbl_recurring WHERE id = ?"), (rec_id,))
+        rec = cursor.fetchone()
+        
+        if rec:
+            id_user, desc, id_category = rec
+            auto_desc = f"{desc} (Automático)"
+            current_month = datetime.datetime.now().strftime('%Y-%m')
+            
+            # Buscar y eliminar la transacción generada este mes
+            if is_postgres():
+                cursor.execute("""
+                    DELETE FROM tbl_transactions 
+                    WHERE id_user = %s AND id_category = %s AND description = %s
+                    AND TO_CHAR(dcompdate, 'YYYY-MM') = %s
+                """, (id_user, id_category, auto_desc, current_month))
+            else:
+                cursor.execute("""
+                    DELETE FROM tbl_transactions 
+                    WHERE id_user = ? AND id_category = ? AND description = ?
+                    AND strftime('%Y-%m', dcompdate) = ?
+                """, (id_user, id_category, auto_desc, current_month))
+
+        # Actualizar el estado del gasto recurrente
+        cursor.execute(adapt_query(
+            "UPDATE tbl_recurring SET last_processed_month = ? WHERE id = ?"
+        ), (month_str, rec_id))
+        conn.commit()
     finally:
         conn.close()
 

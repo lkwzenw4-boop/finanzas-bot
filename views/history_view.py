@@ -3,7 +3,7 @@ from tkinter import messagebox
 import os
 import csv
 from datetime import datetime
-from services.transaction_service import get_recent_transactions
+from services.transaction_service import get_recent_transactions, delete_transaction
 
 class HistoryView(ctk.CTkFrame):
     def __init__(self, master, user_id, **kwargs):
@@ -82,9 +82,23 @@ class HistoryView(ctk.CTkFrame):
             signo = "+" if type_txn == "ingreso" else "-"
             ctk.CTkLabel(table_frame, text=f"{signo} S/.{amount:.2f}", text_color=tipo_color, font=ctk.CTkFont(weight="bold")).grid(row=row, column=4, sticky="e", padx=10, pady=5)
             
-            btn_edit = ctk.CTkButton(table_frame, text="✏️ Editar", width=60, fg_color="gray25", hover_color="gray35",
+            actions_frame = ctk.CTkFrame(table_frame, fg_color="transparent")
+            actions_frame.grid(row=row, column=5, sticky="w", padx=10, pady=5)
+            
+            btn_edit = ctk.CTkButton(actions_frame, text="✏️ Editar", width=60, fg_color="gray25", hover_color="gray35",
                                      command=lambda t_id=id_txn, d=desc, a=amount, t=type_txn, c=cat_name: self._mostrar_dialogo_editar(t_id, d, a, t, c))
-            btn_edit.grid(row=row, column=5, sticky="w", padx=10, pady=5)
+            btn_edit.pack(side="left", padx=(0, 5))
+            
+            btn_delete = ctk.CTkButton(actions_frame, text="🗑️", width=30, fg_color="#E74C3C", hover_color="#C0392B",
+                                     command=lambda t_id=id_txn: self._eliminar_transaccion(t_id))
+            btn_delete.pack(side="left")
+
+    def _eliminar_transaccion(self, id_txn):
+        if messagebox.askyesno("Confirmar", "¿Seguro que deseas eliminar esta transacción del historial?"):
+            if delete_transaction(id_txn):
+                self.recargar_tabla()
+            else:
+                messagebox.showerror("Error", "No se pudo eliminar la transacción.")
 
     def _mostrar_dialogo_editar(self, id_txn, current_desc, current_amount, type_txn, current_cat_name):
         dialog = ctk.CTkToplevel(self)
