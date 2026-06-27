@@ -1,4 +1,4 @@
-from database.connection import get_connection
+from database.connection import get_connection, adapt_query
 from models.category import Category
 
 # Obtener todas las categorías
@@ -36,10 +36,10 @@ def create_category(category: Category):
     try:
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(adapt_query("""
             INSERT INTO tbl_category (description, id_subcategory, type_category)
             VALUES (?, ?, ?)
-        """, (category.description, category.id_subcategory, category.type_category or 'gasto'))
+        """), (category.description, category.id_subcategory, category.type_category or 'gasto'))
 
         new_id = cursor.lastrowid
         conn.commit()
@@ -54,12 +54,12 @@ def get_subcategories_by_parent(parent_id):
     try:
         cursor = conn.cursor()
 
-        cursor.execute("""
+        cursor.execute(adapt_query("""
             SELECT id_category, description, id_subcategory, type_category
             FROM tbl_category
             WHERE id_subcategory = ?
             ORDER BY description ASC
-        """, (parent_id,))
+        """), (parent_id,))
 
         rows = cursor.fetchall()
 
@@ -81,7 +81,7 @@ def get_category_name_by_id(cat_id):
     conn = get_connection()
     try:
         cursor = conn.cursor()
-        cursor.execute("SELECT description FROM tbl_category WHERE id_category = ?", (cat_id,))
+        cursor.execute(adapt_query("SELECT description FROM tbl_category WHERE id_category = ?"), (cat_id,))
         row = cursor.fetchone()
         return row[0] if row else None
     finally:
