@@ -85,13 +85,22 @@ def get_financial_summary(id_user):
         """), (id_user,))
         result = cursor.fetchone()
         
-        cursor.execute(adapt_query("""
-            SELECT 
-                COALESCE(SUM(CASE WHEN strftime('%Y-%m', dcompdate) = strftime('%Y-%m', 'now') THEN amount ELSE 0 END), 0) AS this_month,
-                COALESCE(SUM(CASE WHEN strftime('%Y-%m', dcompdate) = strftime('%Y-%m', 'now', '-1 month') THEN amount ELSE 0 END), 0) AS last_month
-            FROM tbl_transactions
-            WHERE id_user = ? AND type_txn = 'gasto';
-        """), (id_user,))
+        if is_postgres():
+            cursor.execute("""
+                SELECT 
+                    COALESCE(SUM(CASE WHEN TO_CHAR(dcompdate,'YYYY-MM') = TO_CHAR(NOW(),'YYYY-MM') THEN amount ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN TO_CHAR(dcompdate,'YYYY-MM') = TO_CHAR(NOW() - INTERVAL '1 month','YYYY-MM') THEN amount ELSE 0 END), 0)
+                FROM tbl_transactions
+                WHERE id_user = %s AND type_txn = 'gasto';
+            """, (id_user,))
+        else:
+            cursor.execute("""
+                SELECT 
+                    COALESCE(SUM(CASE WHEN strftime('%Y-%m', dcompdate) = strftime('%Y-%m', 'now') THEN amount ELSE 0 END), 0),
+                    COALESCE(SUM(CASE WHEN strftime('%Y-%m', dcompdate) = strftime('%Y-%m', 'now', '-1 month') THEN amount ELSE 0 END), 0)
+                FROM tbl_transactions
+                WHERE id_user = ? AND type_txn = 'gasto';
+            """, (id_user,))
         monthly_result = cursor.fetchone()
 
         total_income = float(result[0]) if result else 0.0
