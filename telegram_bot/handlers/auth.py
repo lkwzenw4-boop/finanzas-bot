@@ -122,3 +122,20 @@ async def cancel_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "❌ Proceso cancelado.\nUsa /start cuando quieras vincular tu cuenta."
     )
     return ConversationHandler.END
+
+async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Desvincula la cuenta actual de Telegram para permitir cambiar de perfil."""
+    telegram_id = update.effective_user.id
+    user = get_user_by_telegram_id(telegram_id)
+    
+    if not user:
+        await update.message.reply_text("No tienes ninguna cuenta vinculada actualmente. Usa /start para iniciar sesión.")
+        return
+        
+    unlink_telegram_id(telegram_id)
+    context.user_data.clear()
+    
+    await update.message.reply_text(
+        "👋 ¡Tu cuenta ha sido desvinculada exitosamente!\n\n"
+        "Si deseas vincular otro perfil (ej. negocio), envía /start nuevamente."
+    )
