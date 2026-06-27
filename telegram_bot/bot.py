@@ -47,6 +47,10 @@ def main():
             self.end_headers()
             self.wfile.write(b"Bot is alive")
             
+        def do_HEAD(self):
+            self.send_response(200)
+            self.end_headers()
+            
     port = int(os.environ.get("PORT", 10000))
     def run_dummy_server():
         try:
