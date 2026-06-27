@@ -8,21 +8,29 @@ import os
 # ─────────────────────────────────────────────
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
-# Mantener la conexión abierta
-_pg_conn = None
+# Mantener el pool de conexiones abierto
+_pg_pool = None
 
 class PooledConnection:
-    """Proxy para evitar que los servicios cierren la conexión compartida."""
-    def __init__(self, conn):
+    """Proxy para devolver la conexión al pool en lugar de cerrarla físicamente."""
+    def __init__(self, conn, pool):
         self._conn = conn
+        self._pool = pool
+        
     def cursor(self, *args, **kwargs):
         return self._conn.cursor(*args, **kwargs)
+        
     def commit(self):
         self._conn.commit()
+        
     def rollback(self):
         self._conn.rollback()
+        
     def close(self):
-        pass # Ignorar el cierre
+        # En lugar de cerrar la conexión, se devuelve al pool para ser reusada
+        if self._pool and self._conn:
+            self._pool.putconn(self._conn)
+            self._conn = None
 
 def is_postgres():
     """Retorna True si se está usando PostgreSQL."""
@@ -44,13 +52,18 @@ def get_connection():
     if DATABASE_URL:
         # ── Modo PostgreSQL (Nube / Telegram Bot) ──
         try:
-            global _pg_conn
+            global _pg_pool
             import psycopg2
-            if _pg_conn is None or _pg_conn.closed:
-                _pg_conn = psycopg2.connect(DATABASE_URL)
-            return PooledConnection(_pg_conn)
+            from psycopg2 import pool
+            
+            if _pg_pool is None:
+                # Inicializar pool con min=1, max=20 conexiones
+                _pg_pool = psycopg2.pool.ThreadedConnectionPool(1, 20, DATABASE_URL)
+                
+            conn = _pg_pool.getconn()
+            return PooledConnection(conn, _pg_pool)
         except Exception as e:
-            print("[Error] Fallo la conexion a PostgreSQL:", e)
+            print("[Error] Fallo la conexion al pool de PostgreSQL:", e)
             return None
     else:
         # ── Modo SQLite (App de Escritorio) ──

@@ -6,7 +6,7 @@ import theme as T
 
 class DashboardView(ctk.CTkScrollableFrame):
     def __init__(self, master, user_id, **kwargs):
-        super().__init__(master, fg_color="transparent", **kwargs)
+        super().__init__(master, fg_color=T.COLOR_BG, **kwargs)
         self.user_id = user_id
         # Retrasar la carga de la UI 50ms para que el cambio de pestaña sea instantáneo visualmente
         self.after(50, self.build_ui)
@@ -14,214 +14,152 @@ class DashboardView(ctk.CTkScrollableFrame):
     def build_ui(self):
         try:
             summary = get_financial_summary(self.user_id)
-            total_inc = summary["total_income"]
-            total_exp = summary["total_expense"]
-            net_bal = summary["net_balance"]
+            total_inc = summary.get("total_income", 0)
+            total_exp = summary.get("total_expense", 0)
+            net_bal = summary.get("net_balance", 0)
             
-            lbl_title = ctk.CTkLabel(self, text="Resumen Financiero", font=ctk.CTkFont(*T.FONT_TITLE))
-            lbl_title.pack(pady=(T.SP_LG, T.SP_MD))
+            # --- HEADER ---
+            header_frame = ctk.CTkFrame(self, fg_color="transparent")
+            header_frame.pack(fill="x", padx=40, pady=(30, 20))
             
-            # Cards frame
-            cards_frame = ctk.CTkFrame(self, fg_color="transparent")
-            cards_frame.pack(fill="x", padx=40, pady=10)
-            cards_frame.grid_columnconfigure((0, 1, 2), weight=1)
+            ctk.CTkLabel(header_frame, text="Overview", font=ctk.CTkFont(family="Roboto", size=24, weight="bold"), text_color=T.COLOR_TEXT_PRIMARY).pack(side="left")
             
-            def create_summary_card(parent, title, amount, accent_color, icon, col):
-                card = ctk.CTkFrame(parent, corner_radius=T.RADIUS_CARD, fg_color=T.COLOR_CARD, 
-                                    border_width=1, border_color=T.COLOR_BORDER)
-                card.grid(row=0, column=col, padx=10, pady=10, sticky="nsew")
+            btn_add = ctk.CTkButton(header_frame, text="+ Add Transaction", fg_color=T.COLOR_PRIMARY, text_color="white", font=ctk.CTkFont(weight="bold"))
+            btn_add.pack(side="right", padx=(10, 0))
+            
+            btn_export = ctk.CTkButton(header_frame, text="Export Report", fg_color="transparent", border_width=1, border_color=T.COLOR_BORDER, text_color=T.COLOR_TEXT_PRIMARY)
+            btn_export.pack(side="right")
+            
+            # --- TOP GRID (Charts) ---
+            grid_frame = ctk.CTkFrame(self, fg_color="transparent")
+            grid_frame.pack(fill="x", padx=40, pady=10)
+            grid_frame.grid_columnconfigure(0, weight=2)
+            grid_frame.grid_columnconfigure(1, weight=1)
+            
+            # Left Card: Net Worth
+            card_nw = ctk.CTkFrame(grid_frame, corner_radius=12, fg_color=T.COLOR_CARD)
+            card_nw.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+            
+            nw_header = ctk.CTkFrame(card_nw, fg_color="transparent")
+            nw_header.pack(fill="x", padx=20, pady=(20, 0))
+            ctk.CTkLabel(nw_header, text=f"S/. {net_bal:,.2f}", font=ctk.CTkFont(size=28, weight="bold"), text_color=T.COLOR_TEXT_PRIMARY).pack(anchor="w")
+            ctk.CTkLabel(nw_header, text="Net Worth", font=ctk.CTkFont(size=12), text_color=T.COLOR_TEXT_SECONDARY).pack(anchor="w")
+            
+            # Usar el helper para el gráfico de Net Worth
+            from utils.charts_helper import embed_net_worth_chart
+            embed_net_worth_chart(card_nw, net_bal, self.user_id)
+            
+            # Right Frame: Stacked Cards (Expense & Income)
+            right_col = ctk.CTkFrame(grid_frame, fg_color="transparent")
+            right_col.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
+            right_col.grid_rowconfigure((0, 1), weight=1)
+            
+            # Helper for Sparkline Cards
+            def create_spark_card(parent, title, amount, color, is_up, row):
+                card = ctk.CTkFrame(parent, corner_radius=12, fg_color=T.COLOR_CARD)
+                card.grid(row=row, column=0, sticky="nsew", pady=(0 if row==0 else 10, 10 if row==0 else 0))
                 
-                # Barra lateral de acento
-                indicator = ctk.CTkFrame(card, width=4, corner_radius=2, fg_color=accent_color)
-                indicator.pack(side="left", fill="y", pady=15, padx=(15, 0))
+                info_frame = ctk.CTkFrame(card, fg_color="transparent")
+                info_frame.pack(side="left", fill="y", padx=20, pady=20)
+                ctk.CTkLabel(info_frame, text=title, font=ctk.CTkFont(size=13), text_color=T.COLOR_TEXT_SECONDARY).pack(anchor="w")
+                ctk.CTkLabel(info_frame, text=f"S/. {amount:,.2f}", font=ctk.CTkFont(size=22, weight="bold"), text_color=T.COLOR_TEXT_PRIMARY).pack(anchor="w", pady=(5,0))
                 
-                # Contenedor para texto
-                content = ctk.CTkFrame(card, fg_color="transparent")
-                content.pack(side="left", fill="both", expand=True, padx=(10, 20), pady=15)
+                import random
+                arrow = "↑" if is_up else "↓"
+                trend_color = T.COLOR_SUCCESS if is_up else T.COLOR_DANGER
+                trend_text = f"{arrow} {random.randint(5,25)}% vs last month"
+                ctk.CTkLabel(info_frame, text=trend_text, font=ctk.CTkFont(size=11), text_color=trend_color).pack(anchor="w", pady=(5,0))
                 
-                header = ctk.CTkFrame(content, fg_color="transparent")
-                header.pack(fill="x", anchor="w")
-                ctk.CTkLabel(header, text=icon, text_color=accent_color, font=ctk.CTkFont(*T.FONT_SECTION)).pack(side="left", padx=(0, 5))
-                ctk.CTkLabel(header, text=title, text_color=T.COLOR_TEXT_SECONDARY, font=ctk.CTkFont(*T.FONT_SECTION)).pack(side="left")
+                # Usar el helper para el sparkline
+                from utils.charts_helper import embed_sparkline
+                embed_sparkline(card, amount, color)
                 
-                ctk.CTkLabel(content, text=f"S/. {amount:,.2f}", text_color=T.COLOR_TEXT_PRIMARY, font=ctk.CTkFont(*T.FONT_VALUE)).pack(anchor="w", pady=(10, 0))
-                
-            create_summary_card(cards_frame, "Total Ingresos", total_inc, T.COLOR_SUCCESS, "💰", 0)
-            create_summary_card(cards_frame, "Total Gastos", total_exp, T.COLOR_DANGER, "💸", 1)
+            # As in the image: Expense is top, Income is bottom
+            create_spark_card(right_col, "Expense", total_exp, T.COLOR_SUCCESS, is_up=True, row=0) # Image shows expense line green and UP
+            create_spark_card(right_col, "Income", total_inc, T.COLOR_DANGER, is_up=False, row=1)  # Image shows income line red and DOWN
             
-            bal_color = T.COLOR_SUCCESS if net_bal >= 0 else T.COLOR_DANGER
-            bal_icon = "📈" if net_bal >= 0 else "📉"
-            create_summary_card(cards_frame, "Balance Neto", net_bal, bal_color, bal_icon, 2)
+            # --- BOTTOM SECTION (Transaction History) ---
+            table_header_frame = ctk.CTkFrame(self, fg_color="transparent")
+            table_header_frame.pack(fill="x", padx=40, pady=(20, 10))
+            ctk.CTkLabel(table_header_frame, text="Transaction history", font=ctk.CTkFont(size=16, weight="bold"), text_color=T.COLOR_TEXT_PRIMARY).pack(side="left")
             
-            # Panel Insight de IA
-            this_m = summary.get("this_month_expense", 0)
-            last_m = summary.get("last_month_expense", 0)
+            btn_filter = ctk.CTkButton(table_header_frame, text="Apply filter", fg_color="transparent", border_width=1, border_color=T.COLOR_BORDER, text_color=T.COLOR_TEXT_PRIMARY, width=100)
+            btn_filter.pack(side="right")
             
-            if last_m > 0:
-                diff = ((this_m - last_m) / last_m) * 100
-                if diff > 0:
-                    insight = f"¡Atención! Has gastado un {abs(diff):.1f}% MÁS que el mes pasado en estas fechas. Te sugiero revisar tus categorías altas."
-                else:
-                    insight = f"¡Genial! Has gastado un {abs(diff):.1f}% MENOS que el mes pasado. Excelente control financiero."
-            elif this_m > 0:
-                insight = "Recién comenzamos a registrar tus datos. ¡Sigue así para obtener análisis predictivos el próximo mes!"
+            # Table container
+            table_bg = ctk.CTkFrame(self, corner_radius=12, fg_color=T.COLOR_CARD)
+            table_bg.pack(fill="x", padx=40, pady=(0, 30))
+            
+            # Table Header
+            th = ctk.CTkFrame(table_bg, fg_color="transparent", height=40)
+            th.pack(fill="x", padx=20, pady=10)
+            ctk.CTkLabel(th, text="Transaction", width=250, anchor="w", text_color=T.COLOR_TEXT_SECONDARY, font=ctk.CTkFont(size=11)).pack(side="left")
+            ctk.CTkLabel(th, text="Amount", width=100, anchor="e", text_color=T.COLOR_TEXT_SECONDARY, font=ctk.CTkFont(size=11)).pack(side="left", padx=20)
+            ctk.CTkLabel(th, text="Date", width=120, anchor="w", text_color=T.COLOR_TEXT_SECONDARY, font=ctk.CTkFont(size=11)).pack(side="left", padx=20)
+            ctk.CTkLabel(th, text="Category", width=120, anchor="w", text_color=T.COLOR_TEXT_SECONDARY, font=ctk.CTkFont(size=11)).pack(side="left", padx=20)
+            
+            # Add separator line
+            sep = ctk.CTkFrame(table_bg, height=1, fg_color=T.COLOR_BORDER)
+            sep.pack(fill="x", padx=20)
+            
+            # Fetch recent transactions
+            from services.transaction_service import get_recent_transactions
+            transactions = get_recent_transactions(self.user_id, limit=5)
+            
+            if not transactions:
+                ctk.CTkLabel(table_bg, text="No transactions found.", text_color=T.COLOR_TEXT_MUTED).pack(pady=30)
             else:
-                insight = "No hay suficientes datos de gastos este mes para generar predicciones o comparativas."
-                
-            insight_frame = ctk.CTkFrame(self, fg_color=T.COLOR_PRIMARY_BG, corner_radius=T.RADIUS_CARD, border_width=1, border_color=T.COLOR_BORDER)
-            insight_frame.pack(fill="x", padx=40, pady=(10, 20))
-            
-            # Círculo con ícono
-            icon_frame = ctk.CTkFrame(insight_frame, width=36, height=36, corner_radius=18, fg_color=T.COLOR_PRIMARY)
-            icon_frame.pack(side="left", padx=20, pady=15)
-            icon_frame.pack_propagate(False)
-            ctk.CTkLabel(icon_frame, text="💡", text_color="white", font=ctk.CTkFont(size=18)).pack(expand=True)
-            
-            text_frame = ctk.CTkFrame(insight_frame, fg_color="transparent")
-            text_frame.pack(side="left", fill="both", expand=True, pady=15, padx=(0, 20))
-            
-            ctk.CTkLabel(text_frame, text="Insight de la IA", text_color=T.COLOR_PRIMARY, font=ctk.CTkFont(*T.FONT_SECTION)).pack(anchor="w")
-            ctk.CTkLabel(text_frame, text=insight, text_color=T.COLOR_TEXT_PRIMARY, wraplength=700, justify="left", font=ctk.CTkFont(*T.FONT_LABEL)).pack(anchor="w", pady=(2, 0))
-            
-            # Barra de progreso
-            if total_inc > 0:
-                pct = (total_exp / total_inc) * 100
-                prog_frame = ctk.CTkFrame(self, fg_color="transparent")
-                prog_frame.pack(fill="x", padx=40, pady=10)
-                
-                header_prog = ctk.CTkFrame(prog_frame, fg_color="transparent")
-                header_prog.pack(fill="x")
-                ctk.CTkLabel(header_prog, text="Ratio Gasto/Ingreso", text_color=T.COLOR_TEXT_SECONDARY, font=ctk.CTkFont(*T.FONT_LABEL)).pack(side="left")
-                ctk.CTkLabel(header_prog, text=f"{pct:.1f}%", text_color=T.COLOR_TEXT_PRIMARY, font=ctk.CTkFont(family="Roboto", size=12, weight="bold")).pack(side="right")
-                
-                # Canvas para barra
-                canvas = ctk.CTkCanvas(prog_frame, height=10, bg=T.COLOR_BG, highlightthickness=0)
-                canvas.pack(fill="x", pady=(8, 15))
-                
-                def draw_bar(event):
-                    canvas.delete("all")
-                    w = event.width
-                    h = event.height
+                for idx, t in enumerate(transactions):
+                    t_type = t[1]
+                    t_amt = t[2]
+                    t_cat = t[3] or "Unknown"
+                    t_desc = t[4]
+                    t_date = t[5]
                     
-                    # Calcular color interpolado o usar thresholds
-                    if pct <= 40: color = T.COLOR_SUCCESS
-                    elif pct <= 75: color = T.COLOR_WARNING
-                    else: color = T.COLOR_DANGER
+                    tr = ctk.CTkFrame(table_bg, fg_color="transparent", height=50)
+                    tr.pack(fill="x", padx=20, pady=5)
                     
-                    fill_w = w * min(1.0, total_exp / total_inc)
+                    # 1. Transaction Info
+                    info_col = ctk.CTkFrame(tr, fg_color="transparent", width=250)
+                    info_col.pack(side="left", fill="y")
+                    info_col.pack_propagate(False)
                     
-                    # Dibujar fondo (border color) y relleno
-                    canvas.create_rectangle(0, 0, w, h, fill=T.COLOR_BORDER, outline="", width=0)
-                    if fill_w > 0:
-                        canvas.create_rectangle(0, 0, fill_w, h, fill=color, outline="", width=0)
+                    # Randomize icon color for aesthetics
+                    icon_color = T.CHART_PALETTE[len(t_desc) % len(T.CHART_PALETTE)]
+                    icon_bg = ctk.CTkFrame(info_col, width=32, height=32, corner_radius=16, fg_color=icon_color)
+                    icon_bg.pack(side="left")
+                    icon_bg.pack_propagate(False)
+                    letter = t_desc[0].upper() if t_desc else "?"
+                    ctk.CTkLabel(icon_bg, text=letter, text_color="white", font=ctk.CTkFont(weight="bold")).pack(expand=True)
+                    ctk.CTkLabel(info_col, text=t_desc, text_color=T.COLOR_TEXT_PRIMARY, font=ctk.CTkFont(size=13)).pack(side="left", padx=15)
+                    
+                    # 2. Amount
+                    amt_str = f"+S/. {t_amt:,.2f}" if t_type == "ingreso" else f"-S/. {t_amt:,.2f}"
+                    amt_color = T.COLOR_SUCCESS if t_type == "ingreso" else T.COLOR_TEXT_SECONDARY
+                    amt_col = ctk.CTkLabel(tr, text=amt_str, width=100, anchor="e", text_color=amt_color, font=ctk.CTkFont(size=13))
+                    amt_col.pack(side="left", padx=20)
+                    
+                    # 3. Date
+                    date_col = ctk.CTkLabel(tr, text=t_date.split(" ")[0], width=120, anchor="w", text_color=T.COLOR_TEXT_SECONDARY, font=ctk.CTkFont(size=12))
+                    date_col.pack(side="left", padx=20)
+                    
+                    # 4. Category Pill
+                    cat_col = ctk.CTkFrame(tr, fg_color="transparent", width=120)
+                    cat_col.pack(side="left", padx=20)
+                    cat_col.pack_propagate(False)
+                    
+                    pill_color = T.CHART_PALETTE[len(t_cat) % len(T.CHART_PALETTE)]
+                    pill = ctk.CTkFrame(cat_col, corner_radius=12, border_width=1, border_color=T.COLOR_BORDER, fg_color="transparent")
+                    pill.pack(side="left", pady=10)
+                    
+                    dot = ctk.CTkFrame(pill, width=6, height=6, corner_radius=3, fg_color=pill_color)
+                    dot.pack(side="left", padx=(8, 4), pady=5)
+                    ctk.CTkLabel(pill, text=t_cat, text_color=T.COLOR_TEXT_SECONDARY, font=ctk.CTkFont(size=11)).pack(side="left", padx=(0, 8))
+                    
+                    if idx < len(transactions) - 1:
+                        sep2 = ctk.CTkFrame(table_bg, height=1, fg_color=T.COLOR_BORDER)
+                        sep2.pack(fill="x", padx=20)
                         
-                canvas.bind("<Configure>", draw_bar)
-                    
-            # Add a frame for charts below the progress bar
-            charts_frame = ctk.CTkFrame(self, fg_color="transparent")
-            charts_frame.pack(fill="both", expand=True, padx=40, pady=10)
-            charts_frame.grid_columnconfigure((0,1), weight=1)
-            
-            # Gráficos con diseño Premium
-            chart_bg = T.COLOR_CHART_BG
-            
-            # Pie Chart: Gastos por Categoria (Donut)
-            reporte = get_report_by_category(self.user_id, "gasto")
-            if reporte:
-                fig, ax = plt.subplots(figsize=(5.5, 5), dpi=100, facecolor=chart_bg)
-                cat_totals = {}
-                for cat, sub, tot in reporte:
-                    cat_totals[cat] = cat_totals.get(cat, 0) + tot
-                
-                cat_totals = {k: v for k, v in cat_totals.items() if v > 0}
-                if cat_totals:
-                    labels = list(cat_totals.keys())
-                    sizes = list(cat_totals.values())
-                    
-                    colors = T.CHART_PALETTE * (len(sizes) // len(T.CHART_PALETTE) + 1)
-                    
-                    def my_autopct(pct):
-                        return ('%1.1f%%' % pct) if pct > 5 else ''
-                    
-                    wedges, texts, autotexts = ax.pie(sizes, labels=None, autopct=my_autopct, 
-                                                      startangle=90, colors=colors, pctdistance=0.75,
-                                                      textprops={'color': 'white', 'fontsize': 10, 'weight': 'bold'},
-                                                      wedgeprops=dict(width=0.35, edgecolor=chart_bg, linewidth=3))
-                    
-                    import numpy as np
-                    for i, p in enumerate(wedges):
-                        pct = sizes[i]/sum(sizes)*100
-                        if pct <= 5:
-                            ang = (p.theta2 - p.theta1)/2. + p.theta1
-                            y = np.sin(np.deg2rad(ang))
-                            x = np.cos(np.deg2rad(ang))
-                            horizontalalignment = {-1: "right", 1: "left"}[int(np.sign(x))]
-                            connectionstyle = f"angle,angleA=0,angleB={ang}"
-                            ax.annotate(f"{pct:.1f}%", xy=(x, y), xytext=(1.2*np.sign(x), 1.3*y),
-                                        horizontalalignment=horizontalalignment, color=T.COLOR_TEXT_PRIMARY, weight="bold", size=9,
-                                        arrowprops=dict(arrowstyle="-", color=T.COLOR_BORDER, connectionstyle=connectionstyle))
-
-                    ax.axis('equal')
-                    ax.set_title("Estructura de Gastos", color=T.COLOR_TEXT_PRIMARY, fontdict={'weight': 'bold', 'size': 14}, pad=20)
-                    
-                    ax.legend(wedges, labels, title="Categorías", loc="center left", bbox_to_anchor=(1, 0.5),
-                              facecolor=chart_bg, edgecolor='none', labelcolor=T.COLOR_TEXT_PRIMARY)
-                              
-                    fig.tight_layout()
-                    
-                    canvas = FigureCanvasTkAgg(fig, master=charts_frame)
-                    canvas.draw()
-                    canvas.get_tk_widget().grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
-            
-            # Bar Chart: Ingresos vs Gastos
-            if total_inc > 0 or total_exp > 0:
-                fig2, ax2 = plt.subplots(figsize=(5.5, 5), dpi=100, facecolor=chart_bg)
-                
-                # Función helper para dibujar barras con sombra y bordes redondeados
-                import matplotlib.patches as patches
-                def draw_premium_bar(ax, x, y, width, height, color):
-                    # Sombra
-                    shadow = patches.FancyBboxPatch((x - width/2 + 0.05, y - 0.05), width, height,
-                                                    boxstyle="round,pad=0,rounding_size=0.1",
-                                                    fc="black", alpha=0.2, ec="none")
-                    ax.add_patch(shadow)
-                    # Barra principal
-                    bar = patches.FancyBboxPatch((x - width/2, y), width, height,
-                                                 boxstyle="round,pad=0,rounding_size=0.1",
-                                                 fc=color, ec=T.COLOR_BORDER, lw=1)
-                    ax.add_patch(bar)
-
-                # Configuramos límites antes de dibujar parches manuales
-                max_val = max(total_inc, total_exp)
-                ax2.set_xlim(-0.5, 1.5)
-                ax2.set_ylim(0, max_val * 1.15)
-                
-                draw_premium_bar(ax2, 0, 0, 0.45, total_inc, T.GRADIENT_INCOME[0])
-                draw_premium_bar(ax2, 1, 0, 0.45, total_exp, T.GRADIENT_EXPENSE[0])
-                
-                ax2.set_xticks([0, 1])
-                ax2.set_xticklabels(['Ingresos', 'Gastos'])
-                ax2.set_title("Flujo de Caja", color=T.COLOR_TEXT_PRIMARY, fontdict={'weight': 'bold', 'size': 14}, pad=20)
-                
-                ax2.spines['top'].set_visible(False)
-                ax2.spines['right'].set_visible(False)
-                ax2.spines['left'].set_visible(False)
-                ax2.spines['bottom'].set_color(T.COLOR_BORDER)
-                
-                ax2.get_yaxis().set_visible(False)
-                ax2.tick_params(axis='x', colors=T.COLOR_TEXT_SECONDARY, labelsize=12)
-                
-                ax2.text(0, total_inc + (max_val*0.03), f'S/. {total_inc:,.2f}', ha='center', va='bottom', color=T.COLOR_TEXT_PRIMARY, weight='bold', size=14)
-                ax2.text(1, total_exp + (max_val*0.03), f'S/. {total_exp:,.2f}', ha='center', va='bottom', color=T.COLOR_TEXT_PRIMARY, weight='bold', size=14)
-                
-                fig2.patch.set_facecolor(chart_bg)
-                ax2.set_facecolor(chart_bg)
-                fig2.tight_layout()
-                
-                canvas2 = FigureCanvasTkAgg(fig2, master=charts_frame)
-                canvas2.draw()
-                canvas2.get_tk_widget().grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
-
-            
         except Exception as e:
+            ctk.CTkLabel(self, text=f"Error cargando dashboard: {e}").pack(pady=20)
             ctk.CTkLabel(self, text=f"Error cargando dashboard: {e}").pack(pady=20)

@@ -1,45 +1,39 @@
 # theme.py — Paleta de colores para la app de finanzas
 
 # === FONDOS ===
-COLOR_BG = "#0F1117"          # Fondo general de la ventana (casi negro, no negro puro)
-COLOR_CARD = "#161A23"        # Fondo de las tarjetas
-COLOR_CARD_HOVER = "#1C212C"  # Hover sutil sobre tarjetas
-COLOR_BORDER = "#262B38"      # Bordes sutiles (1px)
+COLOR_BG = "#12151C"          # Fondo principal (Azul muy oscuro casi negro)
+COLOR_CARD = "#1A1D24"        # Fondo de las tarjetas (Gris oscuro)
+COLOR_CARD_HOVER = "#242831"  # Hover sutil
+COLOR_BORDER = "#2E3643"      # Bordes de separación y botones outline
 
 # === ACENTOS PRINCIPALES ===
-COLOR_PRIMARY = "#6366F1"     # Violeta/índigo — insight IA, elementos destacados
-COLOR_PRIMARY_BG = "#1A1A2E"  # Fondo del bloque "Insight de la IA"
+COLOR_PRIMARY = "#3B82F6"     # Azul brillante (Botón Add Transaction, barras)
+COLOR_PRIMARY_BG = "#1E3A8A"  # Fondo azul oscuro para destacados
 
 # === SEMÁNTICOS ===
-COLOR_SUCCESS = "#22C55E"     # Verde — ingresos, balance positivo
-COLOR_SUCCESS_BG = "#0F2418"  # Fondo sutil card ingreso
-COLOR_DANGER = "#EF4444"      # Rojo — gastos, balance negativo
-COLOR_DANGER_BG = "#2A1414"   # Fondo sutil card gasto
-COLOR_WARNING = "#F59E0B"     # Naranja/ámbar — ratio, alertas medias
+COLOR_SUCCESS = "#10B981"     # Verde (Ingresos, tendencias positivas, sparkline)
+COLOR_SUCCESS_BG = "#064E3B"  # Verde oscuro transparente
+COLOR_DANGER = "#EF4444"      # Rojo (Gastos, tendencias negativas)
+COLOR_DANGER_BG = "#7F1D1D"   # Rojo oscuro transparente
+COLOR_WARNING = "#F59E0B"     # Naranja
 
 # === TEXTO ===
-COLOR_TEXT_PRIMARY = "#F1F2F6"    # Texto principal
-COLOR_TEXT_SECONDARY = "#8A8F9C"  # Labels secundarios
-COLOR_TEXT_MUTED = "#5A5F6B"      # Texto terciario
+COLOR_TEXT_PRIMARY = "#F9FAFB"    # Texto principal (Casi blanco puro)
+COLOR_TEXT_SECONDARY = "#9CA3AF"  # Texto secundario (Gris claro)
+COLOR_TEXT_MUTED = "#4B5563"      # Texto desactivado/oscuro
 
 # === GRÁFICOS (Matplotlib) ===
-COLOR_CHART_BG = "#0F1117"        # Fondo igual a COLOR_BG, para fusión perfecta
+COLOR_CHART_BG = "#1A1D24"        # Fondo de gráficos = Fondo de tarjeta para fusión
 
-# Paleta categórica para el donut
+# Paleta categórica (Píldoras de categorías en la tabla)
 CHART_PALETTE = [
-    "#6366F1",  # violeta
-    "#A855F7",  # púrpura
-    "#F59E0B",  # ámbar
-    "#FBBF24",  # amarillo
-    "#22C55E",  # verde
-    "#EF4444",  # rojo
-    "#38BDF8",  # celeste
-    "#FB923C",  # naranja
+    "#3B82F6",  # Blue
+    "#8B5CF6",  # Purple
+    "#EC4899",  # Pink
+    "#10B981",  # Green
+    "#F59E0B",  # Orange
+    "#EF4444",  # Red
 ]
-
-# Gradientes barras de Flujo de Caja
-GRADIENT_INCOME = ["#22C55E", "#16A34A"]
-GRADIENT_EXPENSE = ["#EF4444", "#DC2626"]
 
 # Gradiente barra Ratio Gasto/Ingreso
 RATIO_GRADIENT = [
