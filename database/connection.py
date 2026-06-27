@@ -8,6 +8,22 @@ import os
 # ─────────────────────────────────────────────
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
+# Mantener la conexión abierta
+_pg_conn = None
+
+class PooledConnection:
+    """Proxy para evitar que los servicios cierren la conexión compartida."""
+    def __init__(self, conn):
+        self._conn = conn
+    def cursor(self, *args, **kwargs):
+        return self._conn.cursor(*args, **kwargs)
+    def commit(self):
+        self._conn.commit()
+    def rollback(self):
+        self._conn.rollback()
+    def close(self):
+        pass # Ignorar el cierre
+
 def is_postgres():
     """Retorna True si se está usando PostgreSQL."""
     return bool(DATABASE_URL)
@@ -28,9 +44,11 @@ def get_connection():
     if DATABASE_URL:
         # ── Modo PostgreSQL (Nube / Telegram Bot) ──
         try:
+            global _pg_conn
             import psycopg2
-            conn = psycopg2.connect(DATABASE_URL)
-            return conn
+            if _pg_conn is None or _pg_conn.closed:
+                _pg_conn = psycopg2.connect(DATABASE_URL)
+            return PooledConnection(_pg_conn)
         except Exception as e:
             print("[Error] Fallo la conexion a PostgreSQL:", e)
             return None
