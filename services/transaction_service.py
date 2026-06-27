@@ -1,4 +1,4 @@
-from database.connection import get_connection, adapt_query
+from database.connection import get_connection, adapt_query, is_postgres
 from models.transaction import Transaction
 
 # Insertar transacción
@@ -121,8 +121,9 @@ def get_recent_transactions(id_user, limit=10, month=None, year=None):
 
     try:
         cursor = conn.cursor()
-        
-        query = adapt_query("""
+        ph = '%s' if is_postgres() else '?'
+
+        base_query = """
             SELECT 
                 t.id_txn,
                 t.description,
@@ -132,22 +133,28 @@ def get_recent_transactions(id_user, limit=10, month=None, year=None):
                 t.dcompdate
             FROM tbl_transactions t
             LEFT JOIN tbl_category c ON t.id_category = c.id_category
-            WHERE t.id_user = ?
-        """)
+            WHERE t.id_user = {ph}
+        """.format(ph=ph)
         params = [id_user]
-        
+
         if month and month != "Todos":
-            query += " AND strftime('%m', t.dcompdate) = ?"
-            params.append(month)
-            
+            if is_postgres():
+                base_query += " AND TO_CHAR(t.dcompdate, 'MM') = %s"
+            else:
+                base_query += " AND strftime('%m', t.dcompdate) = ?"
+            params.append(month.zfill(2))
+
         if year and year != "Todos":
-            query += " AND strftime('%Y', t.dcompdate) = ?"
-            params.append(year)
-            
-        query += " ORDER BY t.dcompdate DESC, t.id_txn DESC LIMIT ?"
+            if is_postgres():
+                base_query += " AND TO_CHAR(t.dcompdate, 'YYYY') = %s"
+            else:
+                base_query += " AND strftime('%Y', t.dcompdate) = ?"
+            params.append(str(year))
+
+        base_query += " ORDER BY t.dcompdate DESC, t.id_txn DESC LIMIT {ph}".format(ph=ph)
         params.append(limit)
-        
-        cursor.execute(query, tuple(params))
+
+        cursor.execute(base_query, tuple(params))
         result = cursor.fetchall()
         return [tuple(row) for row in result]
     finally:
@@ -204,16 +211,28 @@ def get_budgets(id_user):
     if not conn: return []
     try:
         cursor = conn.cursor()
-        cursor.execute(adapt_query("""
-            SELECT 
-                b.id_category, c.description, b.amount_limit,
-                COALESCE((SELECT SUM(amount) FROM tbl_transactions 
-                          WHERE id_user=b.id_user AND id_category=b.id_category AND type_txn='gasto' 
-                          AND strftime('%Y-%m', dcompdate) = strftime('%Y-%m', 'now')), 0) as spent
-            FROM tbl_budgets b
-            JOIN tbl_category c ON b.id_category = c.id_category
-            WHERE b.id_user = ?
-        """), (id_user,))
+        if is_postgres():
+            cursor.execute("""
+                SELECT 
+                    b.id_category, c.description, b.amount_limit,
+                    COALESCE((SELECT SUM(amount) FROM tbl_transactions 
+                              WHERE id_user=b.id_user AND id_category=b.id_category AND type_txn='gasto' 
+                              AND TO_CHAR(dcompdate, 'YYYY-MM') = TO_CHAR(NOW(), 'YYYY-MM')), 0) as spent
+                FROM tbl_budgets b
+                JOIN tbl_category c ON b.id_category = c.id_category
+                WHERE b.id_user = %s
+            """, (id_user,))
+        else:
+            cursor.execute("""
+                SELECT 
+                    b.id_category, c.description, b.amount_limit,
+                    COALESCE((SELECT SUM(amount) FROM tbl_transactions 
+                              WHERE id_user=b.id_user AND id_category=b.id_category AND type_txn='gasto' 
+                              AND strftime('%Y-%m', dcompdate) = strftime('%Y-%m', 'now')), 0) as spent
+                FROM tbl_budgets b
+                JOIN tbl_category c ON b.id_category = c.id_category
+                WHERE b.id_user = ?
+            """, (id_user,))
         return [tuple(row) for row in cursor.fetchall()]
     finally:
         conn.close()
@@ -266,20 +285,24 @@ def process_recurring_transactions(id_user):
         now = datetime.datetime.now()
         current_month = now.strftime('%Y-%m')
         current_day = now.day
-        
-        cursor.execute("SELECT id, description, amount, type_txn, id_category, day_of_month FROM tbl_recurring WHERE id_user = ? AND (last_processed_month IS NULL OR last_processed_month != ?)", (id_user, current_month))
+
+        cursor.execute(adapt_query(
+            "SELECT id, description, amount, type_txn, id_category, day_of_month "
+            "FROM tbl_recurring WHERE id_user = ? "
+            "AND (last_processed_month IS NULL OR last_processed_month != ?)"
+        ), (id_user, current_month))
         recs = cursor.fetchall()
-        
+
         for r in recs:
-            if current_day >= r[5]: # Si ya pasó o es el día de cobro
-                # Insertar
-                cursor.execute("""
+            if current_day >= r[5]:  # Si ya pasó o es el día de cobro
+                cursor.execute(adapt_query("""
                     INSERT INTO tbl_transactions (description, amount, type_txn, id_user, id_category)
                     VALUES (?, ?, ?, ?, ?)
-                """, (f"{r[1]} (Automático)", r[2], r[3], id_user, r[4]))
-                # Marcar como procesado
-                cursor.execute("UPDATE tbl_recurring SET last_processed_month = ? WHERE id = ?", (current_month, r[0]))
-        
+                """), (f"{r[1]} (Automático)", r[2], r[3], id_user, r[4]))
+                cursor.execute(adapt_query(
+                    "UPDATE tbl_recurring SET last_processed_month = ? WHERE id = ?"
+                ), (current_month, r[0]))
+
         conn.commit()
     finally:
         conn.close()
