@@ -8,8 +8,9 @@ class BudgetView(ctk.CTkFrame):
         super().__init__(master, fg_color="transparent", **kwargs)
         self.app = app_instance
         self.user_id = app_instance.user_id
-        self.build_ui()
-        
+        # Retrasar la carga de la UI 50ms
+        self.after(50, self.build_ui)
+
     def build_ui(self):
         lbl_title = ctk.CTkLabel(self, text="Presupuestos Mensuales", font=ctk.CTkFont(size=24, weight="bold"))
         lbl_title.pack(pady=(30, 20))

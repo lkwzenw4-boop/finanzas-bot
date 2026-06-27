@@ -16,8 +16,9 @@ class HistoryView(ctk.CTkFrame):
         current_year = datetime.now().year
         self.anios = ["Todos"] + [str(y) for y in range(current_year - 5, current_year + 1)]
         
-        self.build_ui()
-        
+        # Retrasar la carga de la UI 50ms
+        self.after(50, self.build_ui)
+
     def build_ui(self):
         lbl_title = ctk.CTkLabel(self, text="Últimas Transacciones", font=ctk.CTkFont(size=24, weight="bold"))
         lbl_title.pack(pady=(30, 10))

@@ -7,8 +7,9 @@ class DashboardView(ctk.CTkScrollableFrame):
     def __init__(self, master, user_id, **kwargs):
         super().__init__(master, fg_color="transparent", **kwargs)
         self.user_id = user_id
-        self.build_ui()
-        
+        # Retrasar la carga de la UI 50ms para que el cambio de pestaña sea instantáneo visualmente
+        self.after(50, self.build_ui)
+
     def build_ui(self):
         try:
             summary = get_financial_summary(self.user_id)

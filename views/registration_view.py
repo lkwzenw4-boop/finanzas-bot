@@ -12,8 +12,9 @@ class RegistrationView(ctk.CTkFrame):
         self.user_id = app_instance.user_id
         self.ia = app_instance.ia
         self.tipo = tipo
-        self.build_ui()
-        
+        # Retrasar la carga de la UI 50ms
+        self.after(50, self.build_ui)
+
     def build_ui(self):
         label = "Ingreso" if self.tipo == "ingreso" else "Gasto"
         
