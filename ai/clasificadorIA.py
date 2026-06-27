@@ -1,172 +1,146 @@
-import os
 import re
-import numpy as np
-import onnxruntime as ort
-from tokenizers import Tokenizer
-from utils.paths import get_base_path
-
 
 class ClasificadorIA:
-    def __init__(self):
-        print("\n[Sistema] Cargando modelo IA...")
-        
-        model_dir = os.path.join(get_base_path(), "ai", "model_onnx")
-        
-        if not os.path.exists(model_dir):
-            raise FileNotFoundError(
-                f"No se encontro el modelo ONNX en: {model_dir}\n"
-                "Ejecuta primero: python ai/export_model.py"
-            )
-        
-        # Cargar modelo ONNX
-        model_path = os.path.join(model_dir, "model.onnx")
-        self.session = ort.InferenceSession(
-            model_path,
-            providers=['CPUExecutionProvider']
-        )
-        
-        # Cargar tokenizer
-        tokenizer_path = os.path.join(model_dir, "tokenizer.json")
-        self.tokenizer = Tokenizer.from_file(tokenizer_path)
-        
-        # Configuracion del tokenizer para NLI (premise + hypothesis)
-        self.tokenizer.enable_truncation(max_length=512)
-        self.tokenizer.enable_padding(length=512)
-        
-        # Labels del modelo NLI: contradiction, neutral, entailment
-        # Para zero-shot: entailment = la descripcion pertenece a la categoria
-        self.entailment_id = 0  # indice de "entailment" en mDeBERTa-mnli-xnli
-        self.contradiction_id = 2
-        
-        # Palabras clave para detectar educación
-        self.keywords_educacion = [
-            "cibertec", "senati", "sencico", "tecsup", "idat", "iest", "cetpro",
-            "pucp", "upc", "upn", "utp", "usil", "ucsur", "ucv", "unmsm",
-            "universidad", "instituto", "colegio", "escuela", "academia",
-            "facultad", "diplomado", "maestria", "posgrado",
-            "matricula", "mensualidad", "pension escolar", "pension universitaria",
-            "certamen", "examen de admision", "tutoria",
-            "curso", "taller educativo", "capacitacion",
-        ]
-        
-        # Palabras clave para detectar prestamos
-        self.keywords_prestamos = [
-            "prestamo", "cuota", "credito", "hipoteca", "financiamiento", 
-            "amortizacion", "vehicular", "personal", "tasa", "interes", "yape"
-        ]
-        
-        print("[Sistema] Modelo IA cargado correctamente.")
+    """
+    Clasificador por palabras clave (sin modelo ONNX).
+    Categoriza instantáneamente usando un diccionario de keywords.
+    Las categorías se cachean en RAM al primer uso.
+    """
 
-    def _es_educacion_por_keywords(self, descripcion: str) -> bool:
-        texto = descripcion.lower()
-        texto = texto.replace("á","a").replace("é","e").replace("í","i").replace("ó","o").replace("ú","u")
-        for kw in self.keywords_educacion:
-            kw_norm = kw.replace("á","a").replace("é","e").replace("í","i").replace("ó","o").replace("ú","u")
-            if re.search(r'\b' + re.escape(kw_norm) + r'\b', texto):
-                return True
-        return False
+    # ── Cache de categorías (se carga una sola vez desde la BD) ──────
+    _cache_categorias = None
 
-    def _es_prestamo_por_keywords(self, descripcion: str) -> bool:
-        texto = descripcion.lower()
-        texto = texto.replace("á","a").replace("é","e").replace("í","i").replace("ó","o").replace("ú","u")
-        for kw in self.keywords_prestamos:
-            kw_norm = kw.replace("á","a").replace("é","e").replace("í","i").replace("ó","o").replace("ú","u")
-            if re.search(r'\b' + re.escape(kw_norm) + r'\b', texto):
-                return True
-        return False
-
-    def _softmax(self, logits):
-        """Calcula softmax sobre logits."""
-        exp_logits = np.exp(logits - np.max(logits))
-        return exp_logits / exp_logits.sum()
-
-    def _nli_predict(self, premise, hypothesis):
-        """Ejecuta inferencia NLI y retorna probabilidad de entailment."""
-        # Tokenizar como par premise + hypothesis
-        encoding = self.tokenizer.encode(premise, hypothesis)
-        
-        input_ids = np.array([encoding.ids], dtype=np.int64)
-        attention_mask = np.array([encoding.attention_mask], dtype=np.int64)
-        
-        # Preparar inputs para ONNX
-        inputs = {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-        }
-        
-        # Agregar token_type_ids si el modelo lo necesita
-        input_names = [inp.name for inp in self.session.get_inputs()]
-        if "token_type_ids" in input_names:
-            inputs["token_type_ids"] = np.array([encoding.type_ids], dtype=np.int64)
-        
-        # Inferencia
-        outputs = self.session.run(None, inputs)
-        logits = outputs[0][0]
-        probs = self._softmax(logits)
-        
-        return probs[self.entailment_id]
-
-    def clasificar_con_candidatas(self, descripcion, candidatas):
-        """Clasifica la descripción entre una lista dinámica de candidatas, devolviendo (etiqueta, score)"""
-        if not candidatas:
-            return None, 0.0
-        
-        scores = []
-        for candidata in candidatas:
-            hypothesis = f"Este texto es sobre {candidata}."
-            score = self._nli_predict(descripcion, hypothesis)
-            scores.append(score)
-        
-        best_idx = int(np.argmax(scores))
-        return candidatas[best_idx], float(scores[best_idx])
-
-    # ── Mapa rápido de palabras clave (sin IA) ──────────────────────
-    KEYWORDS_RAPIDOS = {
+    # ── Mapa de palabras clave por tipo de transacción ───────────────
+    KEYWORDS = {
         'gasto': {
-            'Alimentacion':    ['comida','almuerzo','cena','desayuno','pizza','burger','hamburguesa',
-                                'restaurante','pollo','arroz','sopa','ceviche','mercado','verdura',
-                                'fruta','pan','snack','bebida','cafe','helado','lomo','chicha',
-                                'anticucho','taco','sandwich','menu','lonche','delivery','rappi','ifood'],
-            'Transporte':      ['taxi','bus','uber','indriver','moto','combustible','gasolina',
-                                'pasaje','metro','tren','colectivo','combi','cabify','beat','toll','peaje'],
-            'Salud':           ['farmacia','medicina','doctor','medico','consulta','clinica',
-                                'hospital','pastilla','remedio','analisis','examen','vacuna','dentista'],
-            'Entretenimiento': ['cine','pelicula','juego','deporte','gym','gimnasio','streaming',
-                                'netflix','spotify','disney','hbo','prime','youtube','concierto',
-                                'evento','fiesta','karaoke','discoteca','bar','partido'],
-            'Educacion':       ['universidad','colegio','curso','libro','matricula','mensualidad',
-                                'educacion','taller','diplomado','carrera','certificado','capacitacion',
-                                'cibertec','senati','tecsup','upc','pucp','upn','utp'],
-            'Vivienda':        ['alquiler','luz','agua','internet','gas','cable','renta',
-                                'mantenimiento','condominio','limpieza','departamento','casa'],
-            'Servicios':       ['telefono','celular','suscripcion','plan','recarga','movistar',
-                                'claro','entel','bitel','yape','plin','transferencia'],
-            'Tecnologia':      ['laptop','computadora','electronico','tablet','audifonos',
-                                'cargador','software','app','programa','monitor','teclado','mouse'],
-            'Ropa':            ['ropa','camisa','pantalon','zapatos','vestido','polo','zapatillas',
-                                'tenis','chompa','casaca','cartera','bolsa','mochila'],
-            'Prestamos':       ['prestamo','cuota','credito','hipoteca','financiamiento',
-                                'amortizacion','vehicular','interes','deuda'],
-            'Tarjetas de Credito': ['bcp','interbank','bbva','falabella','ripley','scotiabank',
-                                    'visa','mastercard','tarjeta'],
+            'Alimentacion': [
+                'comida','almuerzo','cena','desayuno','pizza','burger','hamburguesa',
+                'restaurante','pollo','arroz','sopa','ceviche','mercado','verdura',
+                'fruta','pan','snack','bebida','cafe','helado','lomo','chicha',
+                'anticucho','taco','sandwich','menu','lonche','delivery','rappi',
+                'ifood','pedidosya','chifa','polleria','cevicheria','panaderia',
+                'minimarket','bodega','supermercado','wong','plaza vea','tottus',
+                'metro','vivanda','candy','dulce','postre','jugo','gaseosa',
+                'cerveza','leche','agua','ensalada','sushi','pasta','fideos',
+            ],
+            'Transporte': [
+                'taxi','bus','uber','indriver','moto','combustible','gasolina',
+                'pasaje','metro','tren','colectivo','combi','cabify','beat',
+                'toll','peaje','estacionamiento','parking','bicicleta','scooter',
+                'boleto','ticket','transporte','movilidad','llenado',
+            ],
+            'Salud': [
+                'farmacia','medicina','doctor','medico','consulta','clinica',
+                'hospital','pastilla','remedio','analisis','examen','vacuna',
+                'dentista','odontologo','optico','lentes','seguro salud',
+                'botica','inkafarma','mifarma','arcangel','fybeca',
+                'termometro','jeringa','alcohol','mascarilla','vitamina',
+            ],
+            'Entretenimiento': [
+                'cine','pelicula','juego','deporte','gym','gimnasio','streaming',
+                'netflix','spotify','disney','hbo','prime','youtube','concierto',
+                'evento','fiesta','karaoke','discoteca','bar','partido',
+                'videojuego','steam','playstation','xbox','switch','anime',
+                'viaje','tour','excursion','hotel','hospedaje','airbnb',
+                'entrada','boleto cine','multicines','cineplanet','cinemark',
+            ],
+            'Educacion': [
+                'universidad','colegio','curso','libro','matricula','mensualidad',
+                'educacion','taller','diplomado','carrera','certificado','capacitacion',
+                'cibertec','senati','tecsup','upc','pucp','upn','utp','usil',
+                'ucv','unmsm','idat','sencico','cetpro','academia','instituto',
+                'pension','escuela','facultad','maestria','posgrado','tutoria',
+                'material escolar','utiles','lapiz','cuaderno','mochila escolar',
+            ],
+            'Vivienda': [
+                'alquiler','luz','agua','internet','gas','cable','renta',
+                'mantenimiento','condominio','limpieza','departamento','casa',
+                'electricidad','enel','luz del sur','sedapal','natural gas',
+                'conegas','limagas','entel hogar','movistar hogar','claro hogar',
+                'impuesto predial','arbitrios','junta','porteria','ascensor',
+            ],
+            'Servicios': [
+                'telefono','celular','suscripcion','plan','recarga','movistar',
+                'claro','entel','bitel','yape','plin','transferencia','giro',
+                'seguro vehicular','soat','notaria','tramite','apostilla',
+                'municipalidad','sunat','reniec','dni','pasaporte',
+            ],
+            'Tecnologia': [
+                'laptop','computadora','electronico','tablet','audifonos',
+                'cargador','software','app','programa','monitor','teclado','mouse',
+                'celular','smartphone','iphone','samsung','xiaomi','impresora',
+                'disco duro','memoria','usb','camara','smartwatch','router',
+                'reparacion','tecnico','servicio tecnico',
+            ],
+            'Ropa': [
+                'ropa','camisa','pantalon','zapatos','vestido','polo','zapatillas',
+                'tenis','chompa','casaca','cartera','bolsa','mochila','ropa interior',
+                'calcetines','medias','gorra','sombrero','cinturon','corbata',
+                'saga falabella','ripley','oechsle','zara','h&m','forever21',
+            ],
+            'Prestamos': [
+                'prestamo','cuota','credito','hipoteca','financiamiento',
+                'amortizacion','vehicular','interes','deuda','letra','pago deuda',
+                'cuota prestamo','banco','financiera','caja',
+            ],
+            'Tarjetas de Credito': [
+                'bcp','interbank','bbva','falabella','ripley','scotiabank',
+                'visa','mastercard','tarjeta','tc bcp','tc interbank',
+                'pago tarjeta','pago tc','cuota tc',
+            ],
         },
         'ingreso': {
-            'Salario':     ['sueldo','salario','pago','quincena','mensual','remuneracion',
-                            'haberes','nomina','planilla','gratificacion','bonificacion','bono'],
-            'Freelance':   ['proyecto','freelance','trabajo','servicio','consultoria',
-                            'honorarios','encargo','cliente'],
-            'Inversiones': ['dividendo','interes','rendimiento','acciones','cripto','bitcoin',
-                            'inversion','utilidad'],
-            'Ventas':      ['venta','vendido','vendi','mercaderia','producto','tienda'],
+            'Salario': [
+                'sueldo','salario','pago','quincena','mensual','remuneracion',
+                'haberes','nomina','planilla','gratificacion','bonificacion',
+                'bono','aguinaldo','liquidacion','cts','utilidades',
+                'horas extra','sobresueldo',
+            ],
+            'Freelance': [
+                'proyecto','freelance','trabajo','servicio','consultoria',
+                'honorarios','encargo','cliente','factura','boleta honorarios',
+                'recibo por honorarios','rph','desarrollo web','diseño',
+            ],
+            'Inversiones': [
+                'dividendo','interes','rendimiento','acciones','cripto','bitcoin',
+                'inversion','utilidad','ganancia','forex','trading','fondo',
+                'deposito plazo','cuenta ahorro',
+            ],
+            'Ventas': [
+                'venta','vendido','vendi','mercaderia','producto','tienda',
+                'marketplace','mercadolibre','olx','facebook marketplace',
+            ],
         }
     }
 
-    def _keyword_rapido(self, descripcion: str, type_txn: str):
-        """Busca categoría por palabras clave sin usar IA. Retorna nombre o None."""
-        texto = descripcion.lower()
-        for a, b in [('á','a'),('é','e'),('í','i'),('ó','o'),('ú','u')]:
+    def __init__(self):
+        print("\n[Sistema] Cargando clasificador de categorías...")
+        # Pre-cargar categorías en cache al iniciar
+        self._cargar_cache()
+        print("[Sistema] Clasificador listo.")
+
+    def _cargar_cache(self):
+        """Carga las categorías de la BD una sola vez y las guarda en RAM."""
+        if ClasificadorIA._cache_categorias is None:
+            try:
+                from services.category_service import get_all_categories
+                ClasificadorIA._cache_categorias = get_all_categories()
+                print(f"[Sistema] {len(ClasificadorIA._cache_categorias)} categorías cargadas en cache.")
+            except Exception as e:
+                print(f"[Sistema] Error cargando categorías: {e}")
+                ClasificadorIA._cache_categorias = []
+
+    def _normalizar(self, texto: str) -> str:
+        """Convierte a minúsculas y elimina acentos."""
+        texto = texto.lower()
+        for a, b in [('á','a'),('é','e'),('í','i'),('ó','o'),('ú','u'),('ñ','n')]:
             texto = texto.replace(a, b)
-        mapa = self.KEYWORDS_RAPIDOS.get(type_txn, {})
+        return texto
+
+    def _buscar_keyword(self, descripcion: str, type_txn: str) -> str | None:
+        """Busca categoría por keywords. Retorna nombre de categoría o None."""
+        texto = self._normalizar(descripcion)
+        mapa = self.KEYWORDS.get(type_txn, {})
         for categoria, palabras in mapa.items():
             for palabra in palabras:
                 if palabra in texto:
@@ -175,12 +149,11 @@ class ClasificadorIA:
 
     def categorizar_y_mapear(self, descripcion, type_txn='gasto'):
         """
-        Categoriza y devuelve (id_category, description) desde la BD.
-        Primero intenta keywords rápidos; si no coincide, usa el modelo ONNX.
-        Si la confianza es menor a 0.35, asigna a la categoría comodín.
+        Categoriza una descripción y retorna (id_category, description).
+        Usa cache en RAM + keywords. Completamente instantáneo.
         """
-        from services.category_service import get_all_categories
-        categorias_db = get_all_categories()
+        # Usar cache (ya cargada al inicio)
+        categorias_db = ClasificadorIA._cache_categorias or []
 
         categorias_principales = [
             c for c in categorias_db
@@ -188,53 +161,55 @@ class ClasificadorIA:
         ]
 
         nombre_otros = 'otros ingresos' if type_txn == 'ingreso' else 'otros gastos'
-        categoria_otros = next((c for c in categorias_principales if c.description.lower() == nombre_otros), None)
+        categoria_otros = next(
+            (c for c in categorias_principales if c.description.lower() == nombre_otros), None
+        )
 
-        # ── Paso 1: keywords rápidos (sin IA, instantáneo) ──
-        match_rapido = self._keyword_rapido(descripcion, type_txn)
-        if match_rapido:
+        # Buscar por keyword
+        match = self._buscar_keyword(descripcion, type_txn)
+        if match:
             for cat in categorias_principales:
-                if cat.description.lower() == match_rapido.lower():
-                    print(f"   -> [Keywords] '{descripcion}' → '{cat.description}' (rápido)")
+                if cat.description.lower() == match.lower():
+                    print(f"   -> [Keyword] '{descripcion}' → '{cat.description}'")
                     return cat.id_category, cat.description
 
-        # ── Paso 2: IA ONNX como fallback (para descripciones no reconocidas) ──
-        categorias_especificas = [c for c in categorias_principales if c.description.lower() != nombre_otros]
-        candidatas_nombres = [c.description for c in categorias_especificas]
-
-        if not candidatas_nombres:
-            if categoria_otros:
-                return categoria_otros.id_category, categoria_otros.description
-            return None, "Desconocida"
-
-        categoria_texto, score = self.clasificar_con_candidatas(descripcion, candidatas_nombres)
-        print(f"   -> [IA-ONNX] '{descripcion}' → '{categoria_texto}' (score={score:.2f})")
-
-        if score < 0.35 and categoria_otros:
-            return categoria_otros.id_category, categoria_otros.description
-
-        for cat in categorias_especificas:
-            if cat.description.lower() == categoria_texto.lower():
-                return cat.id_category, cat.description
-
+        # Sin match → categoría comodín
         if categoria_otros:
+            print(f"   -> [Keyword] '{descripcion}' → '{categoria_otros.description}' (sin match)")
             return categoria_otros.id_category, categoria_otros.description
+
         return None, "Desconocida"
 
     def categorizar_y_mapear_subcategoria(self, descripcion, subcategorias_db):
         """
-        Categoriza y devuelve (id_subcategory, description) desde la BD
-        
-        subcategorias_db: lista de objetos Category() que son subcategorías
+        Categoriza subcategoría por keywords.
+        Si no hay match, retorna la primera subcategoría disponible.
         """
         if not subcategorias_db:
             return None, "Sin subcategoria"
-            
-        candidatas = [s.description for s in subcategorias_db]
-        subcat_texto, score = self.clasificar_con_candidatas(descripcion, candidatas)
-        
+
+        texto = self._normalizar(descripcion)
+
+        # Buscar en el nombre de cada subcategoría
         for sub in subcategorias_db:
-            if sub.description.lower() == subcat_texto.lower():
+            nombre_sub = self._normalizar(sub.description)
+            if nombre_sub in texto or texto in nombre_sub:
                 return sub.id_category, sub.description
-                
-        return None, "Sin subcategoria"
+
+        # Buscar palabras del keyword map en las subcategorías
+        for sub in subcategorias_db:
+            nombre_sub = self._normalizar(sub.description)
+            palabras_sub = nombre_sub.split()
+            for palabra in palabras_sub:
+                if len(palabra) > 3 and palabra in texto:
+                    return sub.id_category, sub.description
+
+        # Sin match → primera subcategoría
+        return subcategorias_db[0].id_category, subcategorias_db[0].description
+
+    # Métodos legacy mantenidos por compatibilidad (no usados)
+    def clasificar_con_candidatas(self, descripcion, candidatas):
+        if not candidatas:
+            return None, 0.0
+        match = self._buscar_keyword(descripcion, 'gasto') or candidatas[0]
+        return match, 1.0
