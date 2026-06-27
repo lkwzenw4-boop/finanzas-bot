@@ -15,7 +15,7 @@ KEYWORDS = {
     'Alimentacion': [
         'comida', 'almuerzo', 'cena', 'desayuno', 'pizza', 'burger', 'hamburguesa',
         'restaurante', 'pollo', 'arroz', 'sopa', 'ceviche', 'mercado', 'verdura',
-        'fruta', 'pan', 'desayuno', 'snack', 'bebida', 'cafe', 'helado', 'ensalada',
+        'fruta', 'pan', 'snack', 'bebida', 'cafe', 'helado', 'ensalada',
         'lomo', 'chicha', 'anticucho', 'taco', 'sandwich', 'menu', 'lonche'
     ],
     'Transporte': [

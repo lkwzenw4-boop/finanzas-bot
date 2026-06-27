@@ -40,22 +40,39 @@ def get_user_by_telegram_id(telegram_id: int):
 def link_telegram_id(username: str, password: str, telegram_id: int):
     """
     Verifica credenciales y vincula el telegram_id con la cuenta.
+    Soporta bcrypt (contraseñas hasheadas) y texto plano (legacy, para migración).
     Retorna (True, username) si es exitoso, o (False, mensaje_error).
     """
+    import bcrypt
+
     conn = get_connection()
     if not conn:
         return False, "Error de conexión a la base de datos"
     try:
         cur = conn.cursor()
         cur.execute(
-            _ph("SELECT id_user, username FROM tbl_users WHERE username = ? AND password = ?"),
-            (username.strip(), password.strip())
+            _ph("SELECT id_user, username, password FROM tbl_users WHERE username = ?"),
+            (username.strip(),)
         )
         row = cur.fetchone()
         if not row:
             return False, "Usuario o contraseña incorrectos. Intenta de nuevo."
 
-        user_id, user_name = tuple(row)[0], tuple(row)[1]
+        user_id, user_name, stored_pw = tuple(row)[0], tuple(row)[1], tuple(row)[2]
+
+        # ── Verificar contraseña: soporta bcrypt Y texto plano (legacy) ──
+        pw_bytes = password.strip().encode('utf-8')
+        stored_bytes = stored_pw.encode('utf-8') if isinstance(stored_pw, str) else stored_pw
+
+        try:
+            # Intenta verificar como hash bcrypt
+            pw_ok = bcrypt.checkpw(pw_bytes, stored_bytes)
+        except Exception:
+            # Fallback: comparación texto plano (para cuentas no migradas)
+            pw_ok = (password.strip() == stored_pw)
+
+        if not pw_ok:
+            return False, "Usuario o contraseña incorrectos. Intenta de nuevo."
 
         # Vincular telegram_id
         cur.execute(
@@ -68,6 +85,7 @@ def link_telegram_id(username: str, password: str, telegram_id: int):
         return False, f"Error al vincular cuenta: {str(e)}"
     finally:
         conn.close()
+
 
 
 # ─────────────────────────────────────────────

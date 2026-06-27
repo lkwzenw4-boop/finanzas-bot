@@ -1,13 +1,15 @@
 """
 telegram_bot/handlers/auth.py
 Maneja el flujo de login y vinculación de cuenta Telegram ↔ Finanzas.
+Login en 2 pasos: primero usuario, luego contraseña (se borra el mensaje por privacidad).
 """
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 from telegram_bot.db import get_user_by_telegram_id, link_telegram_id
 
-# Estado del ConversationHandler
-WAITING_CREDENTIALS = 1
+# Estados del ConversationHandler
+WAITING_USERNAME = 1
+WAITING_PASSWORD = 2
 
 HELP_TEXT = (
     "📋 *Cómo usar el bot:*\n\n"
@@ -23,7 +25,7 @@ HELP_TEXT = (
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Punto de entrada. Si ya está vinculado, saluda; si no, pide credenciales."""
+    """Punto de entrada. Si ya está vinculado, saluda; si no, pide usuario."""
     telegram_id = update.effective_user.id
     name = update.effective_user.first_name
 
@@ -37,52 +39,85 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return ConversationHandler.END
 
-    # Usuario nuevo → pedir credenciales
+    # Limpiar datos previos
+    context.user_data.clear()
+
     await update.message.reply_text(
         f"👋 ¡Hola, *{name}*! Soy tu asistente de *Finanzas Personales* 💰\n\n"
         "Para comenzar, necesito vincular tu cuenta.\n\n"
-        "Envíame tu *usuario* y *contraseña* separados por espacio:\n"
-        "Ejemplo: `kevin mi_contraseña`\n\n"
+        "Envíame tu *nombre de usuario*:\n"
+        "_Ejemplo:_ `kevin`\n\n"
         "_Usa /cancelar para salir._",
         parse_mode='Markdown'
     )
-    return WAITING_CREDENTIALS
+    return WAITING_USERNAME
 
 
-async def receive_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Recibe 'usuario contraseña', verifica y vincula el telegram_id."""
-    text = update.message.text.strip()
-    parts = text.split(' ', 1)
+async def receive_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe el nombre de usuario y pide la contraseña."""
+    username = update.message.text.strip()
 
-    if len(parts) != 2:
+    if not username or ' ' in username:
         await update.message.reply_text(
-            "❌ Formato incorrecto.\n\nEnvía tu usuario y contraseña así:\n"
-            "`kevin mi_contraseña`",
+            "❌ El usuario no debe tener espacios.\n\nEnvía solo tu nombre de usuario:",
             parse_mode='Markdown'
         )
-        return WAITING_CREDENTIALS
+        return WAITING_USERNAME
 
-    username, password = parts
+    # Guardar username en memoria
+    context.user_data['pending_username'] = username
+
+    await update.message.reply_text(
+        f"👤 Usuario: *{username}*\n\n"
+        "🔒 Ahora envíame tu *contraseña*:\n\n"
+        "⚠️ _Tip de seguridad: borra el mensaje con tu contraseña después de enviarlo._",
+        parse_mode='Markdown'
+    )
+    return WAITING_PASSWORD
+
+
+async def receive_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Recibe la contraseña, verifica, vincula y borra el mensaje por seguridad."""
+    password = update.message.text.strip()
+    username = context.user_data.get('pending_username')
     telegram_id = update.effective_user.id
+
+    # Intentar borrar el mensaje con la contraseña para mayor privacidad
+    try:
+        await update.message.delete()
+    except Exception:
+        pass  # Si no tiene permisos de borrar, continuar igual
+
+    if not username:
+        await update.message.reply_text(
+            "❌ Sesión expirada. Usa /start para comenzar de nuevo."
+        )
+        return ConversationHandler.END
 
     success, result = link_telegram_id(username, password, telegram_id)
 
+    # Limpiar datos sensibles de memoria inmediatamente
+    context.user_data.pop('pending_username', None)
+
     if success:
-        await update.message.reply_text(
+        await update.effective_chat.send_message(
             f"✅ ¡Cuenta *{result}* vinculada exitosamente! 🎉\n\n"
+            "🔒 _Tu mensaje con contraseña fue eliminado por seguridad._\n\n"
             + HELP_TEXT,
             parse_mode='Markdown'
         )
         return ConversationHandler.END
     else:
-        await update.message.reply_text(
-            f"❌ {result}\n\nIntenta de nuevo o usa /cancelar.",
+        await update.effective_chat.send_message(
+            f"❌ {result}\n\nEnvíame tu *usuario* nuevamente para intentar de nuevo:",
+            parse_mode='Markdown'
         )
-        return WAITING_CREDENTIALS
+        return WAITING_USERNAME
 
 
 async def cancel_login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancela el proceso de vinculación."""
+    context.user_data.clear()
     await update.message.reply_text(
         "❌ Proceso cancelado.\nUsa /start cuando quieras vincular tu cuenta."
     )

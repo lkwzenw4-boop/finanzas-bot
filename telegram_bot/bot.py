@@ -17,7 +17,8 @@ from telegram.ext import (
 )
 
 from telegram_bot.handlers.auth import (
-    start, receive_credentials, cancel_login, WAITING_CREDENTIALS
+    start, receive_username, receive_password, cancel_login,
+    WAITING_USERNAME, WAITING_PASSWORD
 )
 from telegram_bot.handlers.transactions import (
     handle_message, confirm_transaction, change_category, select_category
@@ -79,13 +80,16 @@ def main():
     request = HTTPXRequest(http_version="1.1")
     app = ApplicationBuilder().token(token).request(request).build()
 
-    # ── ConversationHandler para login (/start → credenciales)
+    # ── ConversationHandler para login (/start → usuario → contraseña)
     login_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
-            WAITING_CREDENTIALS: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_credentials)
-            ]
+            WAITING_USERNAME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_username)
+            ],
+            WAITING_PASSWORD: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_password)
+            ],
         },
         fallbacks=[CommandHandler('cancelar', cancel_login)],
         allow_reentry=True,

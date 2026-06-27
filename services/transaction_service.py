@@ -1,4 +1,4 @@
-from database.connection import get_connection
+from database.connection import get_connection, adapt_query
 from models.transaction import Transaction
 
 # Insertar transacción
@@ -6,19 +6,17 @@ def insert_transaction(txn: Transaction):
     conn = get_connection()
     try:
         cursor = conn.cursor()
-
-        cursor.execute("""
+        cursor.execute(adapt_query("""
             INSERT INTO tbl_transactions 
             (description, amount, type_txn, id_user, id_category)
             VALUES (?, ?, ?, ?, ?)
-        """, (
+        """), (
             txn.description,
             txn.amount,
             txn.type_txn,
             txn.id_user,
             txn.id_category
         ))
-
         conn.commit()
     finally:
         conn.close()
@@ -31,7 +29,7 @@ def get_report_by_category(id_user, type_txn=None):
         cursor = conn.cursor()
 
         if type_txn:
-            cursor.execute("""
+            cursor.execute(adapt_query("""
                 SELECT 
                     COALESCE(c_parent.description, c_child.description) AS category,
                     CASE WHEN c_child.id_subcategory IS NOT NULL THEN c_child.description ELSE 'Sin subcategoría' END AS subcategory,
@@ -43,9 +41,9 @@ def get_report_by_category(id_user, type_txn=None):
                 GROUP BY COALESCE(c_parent.description, c_child.description), 
                          CASE WHEN c_child.id_subcategory IS NOT NULL THEN c_child.description ELSE 'Sin subcategoría' END
                 ORDER BY total DESC
-            """, (id_user, type_txn))
+            """), (id_user, type_txn))
         else:
-            cursor.execute("""
+            cursor.execute(adapt_query("""
                 SELECT 
                     COALESCE(c_parent.description, c_child.description) AS category,
                     CASE WHEN c_child.id_subcategory IS NOT NULL THEN c_child.description ELSE 'Sin subcategoría' END AS subcategory,
@@ -57,10 +55,9 @@ def get_report_by_category(id_user, type_txn=None):
                 GROUP BY COALESCE(c_parent.description, c_child.description), 
                          CASE WHEN c_child.id_subcategory IS NOT NULL THEN c_child.description ELSE 'Sin subcategoría' END
                 ORDER BY total DESC
-            """, (id_user,))
+            """), (id_user,))
 
         result = cursor.fetchall()
-
         return result
     finally:
         conn.close()
@@ -79,23 +76,22 @@ def get_financial_summary(id_user):
     
     try:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(adapt_query("""
             SELECT 
                 COALESCE(SUM(CASE WHEN type_txn = 'ingreso' THEN amount ELSE 0 END), 0) AS total_income,
                 COALESCE(SUM(CASE WHEN type_txn = 'gasto' THEN amount ELSE 0 END), 0) AS total_expense
             FROM tbl_transactions
             WHERE id_user = ?;
-        """, (id_user,))
+        """), (id_user,))
         result = cursor.fetchone()
         
-        # Monthly stats
-        cursor.execute("""
+        cursor.execute(adapt_query("""
             SELECT 
                 COALESCE(SUM(CASE WHEN strftime('%Y-%m', dcompdate) = strftime('%Y-%m', 'now') THEN amount ELSE 0 END), 0) AS this_month,
                 COALESCE(SUM(CASE WHEN strftime('%Y-%m', dcompdate) = strftime('%Y-%m', 'now', '-1 month') THEN amount ELSE 0 END), 0) AS last_month
             FROM tbl_transactions
             WHERE id_user = ? AND type_txn = 'gasto';
-        """, (id_user,))
+        """), (id_user,))
         monthly_result = cursor.fetchone()
 
         total_income = float(result[0]) if result else 0.0
@@ -126,7 +122,7 @@ def get_recent_transactions(id_user, limit=10, month=None, year=None):
     try:
         cursor = conn.cursor()
         
-        query = """
+        query = adapt_query("""
             SELECT 
                 t.id_txn,
                 t.description,
@@ -137,7 +133,7 @@ def get_recent_transactions(id_user, limit=10, month=None, year=None):
             FROM tbl_transactions t
             LEFT JOIN tbl_category c ON t.id_category = c.id_category
             WHERE t.id_user = ?
-        """
+        """)
         params = [id_user]
         
         if month and month != "Todos":
@@ -153,7 +149,6 @@ def get_recent_transactions(id_user, limit=10, month=None, year=None):
         
         cursor.execute(query, tuple(params))
         result = cursor.fetchall()
-        # Convertir sqlite3.Row a tuplas para compatibilidad
         return [tuple(row) for row in result]
     finally:
         cursor.close()
@@ -164,11 +159,11 @@ def update_transaction(id_txn, amount, description, id_category):
     if not conn: return False
     try:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(adapt_query("""
             UPDATE tbl_transactions
             SET amount = ?, description = ?, id_category = ?
             WHERE id_txn = ?
-        """, (amount, description, id_category, id_txn))
+        """), (amount, description, id_category, id_txn))
         conn.commit()
         return cursor.rowcount > 0
     finally:
@@ -179,11 +174,11 @@ def get_category_from_history(id_user, desc):
     if not conn: return None
     try:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(adapt_query("""
             SELECT id_category FROM tbl_transactions 
             WHERE id_user = ? AND LOWER(TRIM(description)) = LOWER(TRIM(?)) 
             ORDER BY id_txn DESC LIMIT 1
-        """, (id_user, desc))
+        """), (id_user, desc))
         res = cursor.fetchone()
         return res[0] if res else None
     finally:
@@ -195,11 +190,11 @@ def set_budget(id_user, id_category, amount_limit):
     if not conn: return
     try:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(adapt_query("""
             INSERT INTO tbl_budgets (id_user, id_category, amount_limit)
             VALUES (?, ?, ?)
             ON CONFLICT(id_user, id_category) DO UPDATE SET amount_limit=excluded.amount_limit
-        """, (id_user, id_category, amount_limit))
+        """), (id_user, id_category, amount_limit))
         conn.commit()
     finally:
         conn.close()
@@ -209,8 +204,7 @@ def get_budgets(id_user):
     if not conn: return []
     try:
         cursor = conn.cursor()
-        # Obtiene presupuesto y suma de gastos del MES ACTUAL para esa categoría
-        cursor.execute("""
+        cursor.execute(adapt_query("""
             SELECT 
                 b.id_category, c.description, b.amount_limit,
                 COALESCE((SELECT SUM(amount) FROM tbl_transactions 
@@ -219,7 +213,7 @@ def get_budgets(id_user):
             FROM tbl_budgets b
             JOIN tbl_category c ON b.id_category = c.id_category
             WHERE b.id_user = ?
-        """, (id_user,))
+        """), (id_user,))
         return [tuple(row) for row in cursor.fetchall()]
     finally:
         conn.close()
@@ -230,10 +224,10 @@ def add_recurring(id_user, description, amount, type_txn, id_category, day_of_mo
     if not conn: return
     try:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(adapt_query("""
             INSERT INTO tbl_recurring (id_user, description, amount, type_txn, id_category, day_of_month)
             VALUES (?, ?, ?, ?, ?, ?)
-        """, (id_user, description, amount, type_txn, id_category, day_of_month))
+        """), (id_user, description, amount, type_txn, id_category, day_of_month))
         conn.commit()
     finally:
         conn.close()
@@ -243,12 +237,12 @@ def get_recurring(id_user):
     if not conn: return []
     try:
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(adapt_query("""
             SELECT r.id, r.description, r.amount, r.type_txn, c.description as cat_name, r.day_of_month
             FROM tbl_recurring r
             LEFT JOIN tbl_category c ON r.id_category = c.id_category
             WHERE r.id_user = ?
-        """, (id_user,))
+        """), (id_user,))
         return [tuple(row) for row in cursor.fetchall()]
     finally:
         conn.close()
@@ -258,7 +252,7 @@ def delete_recurring(rec_id):
     if not conn: return
     try:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM tbl_recurring WHERE id = ?", (rec_id,))
+        cursor.execute(adapt_query("DELETE FROM tbl_recurring WHERE id = ?"), (rec_id,))
         conn.commit()
     finally:
         conn.close()
