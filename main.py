@@ -1,5 +1,11 @@
 import warnings
 warnings.filterwarnings("ignore")
+
+# ── Cargar variables de entorno (.env) ANTES de cualquier otro import ──
+import os
+from dotenv import load_dotenv
+load_dotenv()  # Carga DATABASE_URL y TELEGRAM_BOT_TOKEN desde .env
+
 import multiprocessing
 import customtkinter as ctk
 from tkinter import messagebox
